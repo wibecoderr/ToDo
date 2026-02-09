@@ -45,3 +45,13 @@ type CreateTodoRequest struct {
 	Description string `json:"description" validate:"required,min=1"`
 	Deadline    string `json:"deadline"`
 }
+type UserCxt struct {
+	UserId    string `json:"user_id"`
+	SessionId string `json:"session_id"`
+}
+
+type TodoRequest struct {
+	Title       string `json:"title" validate:"required,max=20"`
+	Description string `json:"description" validate:"required,min=1,max=200"`
+	Status      string `json:"status"`
+}

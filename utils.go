@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/sirupsen/logrus"
-	models "github.com/wibecoderr/ToDo/Model"
+	models "github.com/wibecoderr/ToDo/model"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -37,6 +37,7 @@ func EncodeJSONBody(resp http.ResponseWriter, data interface{}) error {
 
 // RespondJSON sends the interface as a JSON
 func RespondJSON(w http.ResponseWriter, statusCode int, body interface{}) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if body != nil {
 		if err := EncodeJSONBody(w, body); err != nil {

@@ -34,22 +34,16 @@ func main() {
 		r.Use(middleware.AuthMiddleware)
 
 		r.Post("/logout", handler.Logout)
-		r.Delete("/delete", handler.DeleteUser)
 
-		r.Post("/todos", handler.CreateTodo)
-		r.Get("/todos", handler.GetAllTodos)
-		//r.Get("/todos", handler.GetTodos)
-		r.Get("/todos/session", handler.GetBysession)
-		r.Get("/search", handler.SearchTodo)
-		r.Get("/todos/status", handler.GetByStatus) // change status
-		r.Get("/todos/{todoid}", handler.GetByTodoID)
-		r.Get("/todos/filter", handler.UpcomingTodos) // not filter, upcomingTodo
-		// some other routes: /completed, /incompleted
+		// remove s from todos route
+		r.Post("/todo", handler.CreateTodo)
+		r.Get("/todo", handler.GetAllTodos)
 
-		r.Patch("/todos/{id}", handler.UpdateTodo)
-		r.Delete("/todos/{id}", handler.DeleteTodo) //checked
+		r.Patch("/todo/{todoID}", handler.UpdateTodo)
+		r.Delete("/todo/{id}", handler.DeleteTodo)
+		r.Delete("/delete", handler.DeleteUser) //checked
 	})
-	//r.Get("/todos", handler.GetTodosHandler)    // checked  , title search , archieve at
+
 	http.ListenAndServe(":8080", r)
-	// indexing , routs , schema , session , filter-get todo, unique index , refrence , hashing
+
 }
