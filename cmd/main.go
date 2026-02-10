@@ -13,6 +13,10 @@ import (
 	"github.com/wibecoderr/ToDo/handler"
 )
 
+// transcation and jwt is still incomplete look for delete user that is also like not ok ,create user , logout correct it and check for other mistake
+// Tramscation -- registr -- Done
+// jwt - understandinng -- read
+// postman userId --"deekshant@gmail.com", password --StrongPassword@123
 func main() {
 	if err := database.ConnectAndMigrate(
 		os.Getenv("DB_HOST"),
@@ -44,6 +48,9 @@ func main() {
 		r.Delete("/delete", handler.DeleteUser) //checked
 	})
 
-	http.ListenAndServe(":8080", r)
+	err := http.ListenAndServe(":8080", r)
+	if err != nil {
+		logrus.Fatalf("Failed to start server with error: %+v", err)
+	}
 
 }

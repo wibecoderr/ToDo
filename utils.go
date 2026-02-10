@@ -2,10 +2,14 @@ package middleware
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"time"
 
+	"github.com/form3tech-oss/jwt-go"
 	"github.com/go-playground/validator/v10"
 	"github.com/sirupsen/logrus"
 	models "github.com/wibecoderr/ToDo/model"
@@ -17,10 +21,14 @@ func HashPassword(password string) (string, error) {
 	return string(bytes), err
 }
 
-func CheckPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+func CheckPasswordHash(password, hashedPassword string) bool {
+	err := bcrypt.CompareHashAndPassword(
+		[]byte(hashedPassword),
+		[]byte(password),
+	)
 	return err == nil
 }
+
 func ParseBody(body io.Reader, out interface{}) error {
 	err := json.NewDecoder(body).Decode(out)
 	if err != nil {
@@ -93,4 +101,59 @@ func RespondValidationError(w http.ResponseWriter, validationErrors map[string]s
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Printf("failed to encode validation error response: %v\n", err)
 	}
+}
+func GenerateJWT(userID, sessionID string) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id":    userID,
+		"session_id": sessionID,
+		"exp":        time.Now().Add(24 * time.Hour).Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+}
+
+func VerifyJWT(tokenStr string) (string, string, error) {
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		// Verify signing method
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("invalid signing method")
+		}
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
+	if err != nil {
+		return "", "", err
+	}
+
+	if !token.Valid {
+		return "", "", errors.New("invalid token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", "", errors.New("invalid claims")
+	}
+
+	// Safely extract user_id
+	userIDInterface, exists := claims["user_id"]
+	if !exists {
+		return "", "", errors.New("user_id not found in token")
+	}
+	userID, ok := userIDInterface.(string)
+	if !ok {
+		return "", "", errors.New("invalid user_id type")
+	}
+
+	// Safely extract session_id
+	sessionIDInterface, exists := claims["session_id"]
+	if !exists {
+		return "", "", errors.New("session_id not found in token")
+	}
+	sessionID, ok := sessionIDInterface.(string)
+	if !ok {
+		return "", "", errors.New("invalid session_id type")
+	}
+
+	return userID, sessionID, nil
 }

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	models "github.com/wibecoderr/ToDo/model"
 	database "github.com/wibecoderr/ToDo/database/dbhelper"
+	models "github.com/wibecoderr/ToDo/model"
 )
 
 type contextKey struct {
@@ -22,25 +22,53 @@ var usercontextKey = contextKey{}
 
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sessionToken, err := extractSessionToken(r)
-		if err != nil {
-			http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
+		// Extract token from Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			RespondError(w, http.StatusUnauthorized, nil, "missing authorization header")
 			return
 		}
 
-		userID, err := database.GetUserIDBySession(sessionToken)
-		if err != nil {
-			http.Error(w, "invalid or expired session", http.StatusUnauthorized)
+		// Verify Bearer prefix
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			RespondError(w, http.StatusUnauthorized, nil, "invalid authorization format, expected 'Bearer <token>'")
 			return
 		}
+
+		// Extract token
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenStr == "" {
+			RespondError(w, http.StatusUnauthorized, nil, "empty token")
+			return
+		}
+
+		// Verify JWT and extract claims
+		userID, sessionID, err := VerifyJWT(tokenStr)
+		if err != nil {
+			RespondError(w, http.StatusUnauthorized, err, "invalid or expired token")
+			return
+		}
+
+		// Verify session exists in database and is not expired
+		dbUserID, err := database.GetUserIDBySession(sessionID)
+		if err != nil {
+			RespondError(w, http.StatusUnauthorized, err, "session not found or expired")
+			return
+		}
+
+		// Verify userID from JWT matches userID from database
+		if dbUserID != userID {
+			RespondError(w, http.StatusUnauthorized, nil, "token user mismatch")
+			return
+		}
+
+		// Set user context
 		user := &models.UserCxt{
 			UserId:    userID,
-			SessionId: sessionToken,
+			SessionId: sessionID,
 		}
 
 		ctx := context.WithValue(r.Context(), usercontextKey, user)
-		//ctx = context.WithValue(ctx, SessionTokenKey, sessionToken)
-
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

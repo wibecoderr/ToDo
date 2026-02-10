@@ -24,7 +24,7 @@ func IsUserRegistered(email string) (bool, error) {
 	err := database.Todo.Get(&exists, query, email)
 	return exists, err
 }
-func CreateUser(email, name, password, phoneNumber string, age int) (string, error) {
+func CreateUser(tx *sqlx.Tx, email, name, password, phoneNumber string, age int) (string, error) {
 	query := `
        INSERT INTO users (email, name, password, phone_number, age)
        VALUES (TRIM(LOWER($1)), $2, $3, $4, $5)
@@ -32,7 +32,7 @@ func CreateUser(email, name, password, phoneNumber string, age int) (string, err
     `
 
 	var userID string
-	err := database.Todo.Get(&userID, query, email, name, password, phoneNumber, age)
+	err := tx.Get(&userID, query, email, name, password, phoneNumber, age)
 	return userID, err
 }
 
@@ -44,18 +44,15 @@ func GetUserByEmail(email string) (string, string, error) {
 		AND archived_at IS NULL
 	`
 
-	var result struct {
-		UID      string `db:"uid"`
-		Password string `db:"password"`
-	}
-	err := database.Todo.Get(&result, query, email)
+	var request models.Result
+	err := database.Todo.Get(&request, query, email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", "", nil
 		}
 		return "", "", err
 	}
-	return result.UID, result.Password, nil
+	return request.UID, request.Password, nil
 }
 func GetFilteredTodos(
 	userID string,
@@ -104,28 +101,29 @@ func GetFilteredTodos(
 }
 
 func CreateSession(db sqlx.Ext, userID string) (string, error) {
-	token := uuid.New().String()
+	sessionID := uuid.New().String()
 
 	query := `
 		INSERT INTO user_session (user_id, session_token, expires_at)
 		VALUES ($1, $2, now() + interval '24 hours')
+				RETURNING id
 	`
 
-	_, err := db.Exec(query, userID, token)
+	var id int
+	err := sqlx.Get(db, &id, query, userID, sessionID)
 	if err != nil {
 		return "", err
 	}
 
-	return token, nil
+	return sessionID, nil
 }
 
-func DeleteSession(token string) error {
-	sql := "delete from user_session where session_token = $1" // archive
-	_, err := database.Todo.Exec(sql, token)
-	if err != nil {
-		return err
-	}
-	return nil
+func DeleteSession(tx *sqlx.Tx, token string) error {
+	_, err := tx.Exec(
+		`DELETE FROM user_session WHERE session_token = $1`,
+		token,
+	)
+	return err
 
 }
 
@@ -182,47 +180,61 @@ func UpdateTodoById(userId string, todoId int, title, desc, status string) error
 	return nil
 }
 
-func CreateTodoBySession(userID, title, description string, deadline *time.Time) (string, error) {
+func CreateTodoBySession(userID, title, description string, deadline *time.Time) (int, error) {
 	query := `
         INSERT INTO todo (user_id, title, description, deadline)
         VALUES ($1, $2, $3, $4)
         RETURNING id
     `
 
-	var todoID string
+	var todoID int
 	err := database.Todo.Get(&todoID, query, userID, title, description, deadline)
 	return todoID, err
 }
-func ArchiveUser(userID string) error {
-	query := `
-        UPDATE users
-        SET archived_at = now(),
-            updated_at = now()
-        WHERE uid = $1 
-        AND archived_at IS NULL
-    `
 
-	_, err := database.Todo.Exec(query, userID)
-	return err
-}
-func UpdateUserTimestamp(userID string) error {
-	query := `UPDATE users SET updated_at = now() WHERE uid = $1`
-	_, err := database.Todo.Exec(query, userID)
-	return err
-}
-func DeleteTodoByUserID(userID string, id int) error {
-	query := `
-        UPDATE todo
-        SET archived_at = now()
-        WHERE id = $1
-          AND user_id = $2
-          AND archived_at IS NULL
-    `
+//func ArchiveUser(userID string) error {
+//	query := `
+//        UPDATE users
+//        SET archived_at = now(),
+//            updated_at = now()
+//        WHERE uid = $1
+//        AND archived_at IS NULL
+//    `
+//
+//	_, err := database.Todo.Exec(query, userID)
+//	return err
+//}
 
-	_, err := database.Todo.Exec(query, id, userID)
+func ArchiveUser(tx *sqlx.Tx, userID string) error {
+
+	_, err := tx.Exec(`
+		UPDATE todo
+		SET archived_at = now()
+		WHERE user_id = $1
+		AND archived_at IS NULL
+	`, userID)
 	if err != nil {
 		return err
 	}
 
+	// for user
+	_, err = tx.Exec(`
+		UPDATE users
+		SET archived_at = now(),
+			updated_at = now()
+		WHERE uid = $1 
+		AND archived_at IS NULL
+	`, userID)
+	if err != nil {
+		return err
+	}
 	return nil
+
+}
+func UpdateUserTimestamp(tx *sqlx.Tx, userID string) error {
+	_, err := tx.Exec(
+		`UPDATE users SET updated_at = NOW() WHERE uid = $1`,
+		userID,
+	)
+	return err
 }

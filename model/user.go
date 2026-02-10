@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
 
 type User struct {
 	ID    string `db:"uid" json:"id"`
@@ -54,4 +58,13 @@ type TodoRequest struct {
 	Title       string `json:"title" validate:"required,max=20"`
 	Description string `json:"description" validate:"required,min=1,max=200"`
 	Status      string `json:"status"`
+}
+type Claims struct {
+	UserID    string `json:"user_id"`
+	SessionID string `json:"session_id"`
+	jwt.RegisteredClaims
+}
+type Result struct {
+	UID      string `db:"uid"`
+	Password string `db:"password"`
 }

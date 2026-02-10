@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jmoiron/sqlx"
 	_ "github.com/wibecoderr/ToDo"
 	utils "github.com/wibecoderr/ToDo"
 	database2 "github.com/wibecoderr/ToDo/database"
 	database "github.com/wibecoderr/ToDo/database/dbhelper"
-	"github.com/wibecoderr/ToDo/model"
+	models "github.com/wibecoderr/ToDo/model"
 )
 
 func RegisterUser(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +35,7 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exists {
-		utils.RespondError(w, http.StatusBadRequest, err, "User already exists")
+		utils.RespondError(w, http.StatusConflict, nil, "User already exists")
 		return
 	}
 
@@ -43,82 +44,102 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 		utils.RespondError(w, http.StatusInternalServerError, err, "Failed to hash password")
 		return
 	}
+	var jwtToken string
+	//  err = database2.Tx(func(tx *sqlx.Tx) error {
+	err = database2.Tx(func(tx *sqlx.Tx) error {
+		userID, err := database.CreateUser(
+			tx,
+			req.Email,
+			req.Name,
+			hashedPassword,
+			req.PhoneNumber,
+			req.Age)
 
-	userID, err := database.CreateUser(
-		req.Email,
-		req.Name,
-		hashedPassword,
-		req.PhoneNumber,
-		req.Age,
-	)
+		if err != nil {
+			return err
+		}
 
+		// Create session for auto-login
+
+		sessionID, err := database.CreateSession(tx, userID)
+		if err != nil {
+			return err
+		}
+		// jwt token
+		jwtToken, err = utils.GenerateJWT(userID, sessionID)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		utils.RespondError(w, http.StatusInternalServerError, err, "Failed to create user")
 		return
 	}
 
-	// Create session for auto-login
-	sessionToken, err := database.CreateSession(database2.Todo, userID)
-	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "Failed to create session")
-		return
-	}
-
 	// utils - Respond JSON
 	utils.RespondJSON(w, http.StatusCreated, map[string]string{
-		"session_token": sessionToken,
-		"message":       "registered and logged in",
+		"token":   jwtToken,
+		"message": "registered and logged in",
 	})
 }
-
 func LoginUser(w http.ResponseWriter, r *http.Request) {
-	var req models.LoginRequest
+	var (
+		req      models.LoginRequest
+		jwtToken string
+	)
+	// parse body -- validate -- check user exists -- decoding -- transcation --session -- jwt -- encode
 
 	if err := utils.ParseBody(r.Body, &req); err != nil {
 		utils.RespondError(w, http.StatusBadRequest, err, "Failed to parse body")
 		return
 	}
-
-	if errs := utils.ValidateStruct(req); errs != nil {
-		utils.RespondValidationError(w, errs)
+	if err := utils.ValidateStruct(req); err != nil {
+		utils.RespondValidationError(w, err)
 		return
 	}
-
-	userID, storedPassword, err := database.GetUserByEmail(req.Email)
+	// checking user is in database or not
+	userId, password, err := database.GetUserByEmail(req.Email)
+	if userId == "" {
+		utils.RespondError(w, http.StatusNotFound, nil, "User not found")
+		return
+	}
+	if userId == "" {
+		utils.RespondError(w, http.StatusNotFound, nil, "User not found")
+		return
+	}
 	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "server error")
+		utils.RespondError(w, http.StatusInternalServerError, err, "Failed to get user")
 		return
 	}
-	//// for delete
-	//if userID == "" {
-	//	// check wheether user exist or not is exists tell user to contact
-	//	archivedUserID, err := database.GetArchivedUserByEmail(req.Email)
-	//	if err != nil {
-	//		utils.RespondError(w, http.StatusInternalServerError, err, "server error")
-	//		return
-	//	}
-	//
-	//	if archivedUserID != "" {
-	//		utils.RespondError(w, http.StatusBadRequest, err, "user_id is not registered")
-	//		return
-	//	}
-	//
-	//	utils.RespondError(w, http.StatusBadRequest, err, "invalid user")
-	//}
+	// check password
 
-	if !utils.CheckPasswordHash(req.Password, storedPassword) {
-		utils.RespondError(w, http.StatusUnauthorized, err, "invalid credentials")
+	if !utils.CheckPasswordHash(req.Password, password) {
+		utils.RespondError(w, http.StatusUnauthorized, nil, "User passwords do not match")
 		return
 	}
+	// password checked now
+	// transcastion
 
-	sessionToken, err := database.CreateSession(database2.Todo, userID)
+	err = database2.Tx(func(tx *sqlx.Tx) error {
+		sessionID, err := database.CreateSession(tx, userId)
+		if err != nil {
+			return err
+		}
+		jwtToken, err = utils.GenerateJWT(userId, sessionID)
+		if err != nil {
+			return err
+		}
+		return nil
+
+	})
 	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "server error")
+		utils.RespondError(w, http.StatusInternalServerError, nil, "Failed to create session")
 		return
 	}
-
-	utils.RespondJSON(w, http.StatusCreated, map[string]string{
-		"session_token": sessionToken,
+	utils.RespondJSON(w, http.StatusOK, map[string]string{
+		"token":   jwtToken,
+		"message": "logged in",
 	})
 }
 
@@ -210,11 +231,11 @@ func CreateTodo(w http.ResponseWriter, r *http.Request) {
 		deadline,
 	)
 	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "Fail tp create session")
+		utils.RespondError(w, http.StatusInternalServerError, err, "Fail to create session")
 		return
 	}
 
-	utils.RespondJSON(w, http.StatusCreated, map[string]string{
+	utils.RespondJSON(w, http.StatusCreated, map[string]int{
 		"todoId": todoId,
 	})
 }
@@ -222,14 +243,14 @@ func CreateTodo(w http.ResponseWriter, r *http.Request) {
 func DeleteTodo(w http.ResponseWriter, r *http.Request) {
 	userCTX := utils.UserContext(r)
 	userID := userCTX.UserId
-	todoID, err := strconv.Atoi(chi.URLParam(r, "")) //error check
+	todoID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		utils.RespondError(w, http.StatusBadRequest, err, "invalid  parameter")
 		return
 	}
 	err = database.DeleteTodoById(userID, todoID)
 	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "Fail tp delete session")
+		utils.RespondError(w, http.StatusInternalServerError, err, "Fail to  delete session")
 		return
 	}
 
@@ -244,6 +265,7 @@ func UpdateTodo(w http.ResponseWriter, r *http.Request) {
 	todoID, err := strconv.Atoi(chi.URLParam(r, "todoID"))
 	if err != nil {
 		utils.RespondError(w, http.StatusBadRequest, err, "invalid  parameter")
+		return
 	}
 
 	var reqBody models.TodoRequest
@@ -265,7 +287,7 @@ func UpdateTodo(w http.ResponseWriter, r *http.Request) {
 		reqBody.Status,
 	)
 	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "Fail tp update session")
+		utils.RespondError(w, http.StatusInternalServerError, err, "Fail to update session")
 		return
 	}
 
@@ -275,13 +297,13 @@ func UpdateTodo(w http.ResponseWriter, r *http.Request) {
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	userCTX := utils.UserContext(r)
 	userID := userCTX.UserId
-
-	err := database.ArchiveUser(userID)
+	err := database2.Tx(func(tx *sqlx.Tx) error {
+		return database.ArchiveUser(tx, userID)
+	})
 	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "User not found") //500
+		utils.RespondError(w, http.StatusInternalServerError, err, "user not found or failed to delete")
 		return
 	}
-
 	utils.RespondJSON(w, http.StatusOK, map[string]string{
 		"message": "User deleted successfully",
 	})
@@ -290,24 +312,29 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 func Logout(w http.ResponseWriter, r *http.Request) {
 
 	userCtx := utils.UserContext(r)
-	SessionToken := userCtx.SessionId
+	sessionToken := userCtx.SessionId
 	userID := userCtx.UserId
-	//userID, err := database.GetUserIDBySession(sessionToken)
-	//if err != nil {
-	//	utils.RespondError(w, http.StatusInternalServerError, err, "Failed to retrieve user id")
-	//	return
-	//}
 
-	err := database.DeleteSession(SessionToken) // transaction
-	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err, "Failed to delete session")
-		return
-	}
+	err := database2.Tx(func(tx *sqlx.Tx) error {
 
-	err = database.UpdateUserTimestamp(userID)
+		if err := database.DeleteSession(tx, sessionToken); err != nil {
+			return err
+		}
+
+		if err := database.UpdateUserTimestamp(tx, userID); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		utils.RespondError(w, http.StatusInternalServerError, err,
-			"Failed to update user timestamp")
+		utils.RespondError(
+			w,
+			http.StatusInternalServerError,
+			err,
+			"Logout failed",
+		)
 		return
 	}
 
