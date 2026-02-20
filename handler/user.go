@@ -104,10 +104,6 @@ func LoginUser(w http.ResponseWriter, r *http.Request) {
 		utils.RespondError(w, http.StatusNotFound, nil, "User not found")
 		return
 	}
-	if userId == "" {
-		utils.RespondError(w, http.StatusNotFound, nil, "User not found")
-		return
-	}
 	if err != nil {
 		utils.RespondError(w, http.StatusInternalServerError, err, "Failed to get user")
 		return
@@ -213,7 +209,10 @@ func CreateTodo(w http.ResponseWriter, r *http.Request) {
 		utils.RespondError(w, http.StatusBadRequest, err, "error in parsing body")
 		return
 	}
-
+	if errs := utils.ValidateStruct(req); errs != nil {
+		utils.RespondValidationError(w, errs)
+		return
+	}
 	var deadline *time.Time
 	if req.Deadline != "" {
 		t, err := time.Parse(time.RFC3339, req.Deadline)
@@ -315,20 +314,17 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	sessionToken := userCtx.SessionId
 	userID := userCtx.UserId
 
-	err := database2.Tx(func(tx *sqlx.Tx) error {
+	if err := database.DeleteSession(sessionToken); err != nil {
+		utils.RespondError(
+			w,
+			http.StatusInternalServerError,
+			err,
+			"Logout failed",
+		)
+		return
+	}
 
-		if err := database.DeleteSession(tx, sessionToken); err != nil {
-			return err
-		}
-
-		if err := database.UpdateUserTimestamp(tx, userID); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := database.UpdateUserTimestamp(userID); err != nil {
 		utils.RespondError(
 			w,
 			http.StatusInternalServerError,

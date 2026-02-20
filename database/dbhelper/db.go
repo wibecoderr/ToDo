@@ -118,8 +118,8 @@ func CreateSession(db sqlx.Ext, userID string) (string, error) {
 	return sessionID, nil
 }
 
-func DeleteSession(tx *sqlx.Tx, token string) error {
-	_, err := tx.Exec(
+func DeleteSession(token string) error {
+	_, err := database.Todo.Exec(
 		`DELETE FROM user_session WHERE session_token = $1`,
 		token,
 	)
@@ -231,8 +231,8 @@ func ArchiveUser(tx *sqlx.Tx, userID string) error {
 	return nil
 
 }
-func UpdateUserTimestamp(tx *sqlx.Tx, userID string) error {
-	_, err := tx.Exec(
+func UpdateUserTimestamp(userID string) error {
+	_, err := database.Todo.Exec(
 		`UPDATE users SET updated_at = NOW() WHERE uid = $1`,
 		userID,
 	)

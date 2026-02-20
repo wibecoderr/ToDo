@@ -61,22 +61,25 @@ func migrateUp(db *sqlx.DB) error {
 
 	return nil
 }
-func Tx(fn func(tx *sqlx.Tx) error) error {
+func Tx(fn func(tx *sqlx.Tx) error) (err error) {
 	tx, err := Todo.Beginx()
 	if err != nil {
-		return fmt.Errorf("failed to start a transaction: %+v", err)
+		return fmt.Errorf("failed to start transaction: %w", err)
 	}
+
 	defer func() {
 		if err != nil {
 			if rollBackErr := tx.Rollback(); rollBackErr != nil {
-				logrus.Errorf("failed to rollback tx: %s", rollBackErr)
+				logrus.Errorf("failed to rollback tx: %v", rollBackErr)
 			}
 			return
 		}
+
 		if commitErr := tx.Commit(); commitErr != nil {
-			logrus.Errorf("failed to commit tx: %s", commitErr)
+			err = fmt.Errorf("failed to commit tx: %w", commitErr)
 		}
 	}()
+
 	err = fn(tx)
-	return err
+	return
 }

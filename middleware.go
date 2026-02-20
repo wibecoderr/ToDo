@@ -45,7 +45,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		// Verify JWT and extract claims
 		userID, sessionID, err := VerifyJWT(tokenStr)
 		if err != nil {
-			RespondError(w, http.StatusUnauthorized, err, "invalid or expired token")
+			RespondError(w, http.StatusUnauthorized, nil, "invalid or expired token")
 			return
 		}
 

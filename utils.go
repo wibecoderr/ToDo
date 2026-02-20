@@ -106,7 +106,7 @@ func GenerateJWT(userID, sessionID string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id":    userID,
 		"session_id": sessionID,
-		"exp":        time.Now().Add(24 * time.Hour).Unix(),
+		"exp":        time.Now().Add(10 * time.Minute).Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -115,7 +115,7 @@ func GenerateJWT(userID, sessionID string) (string, error) {
 
 func VerifyJWT(tokenStr string) (string, string, error) {
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-		// Verify signing method
+
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("invalid signing method")
 		}
@@ -135,7 +135,6 @@ func VerifyJWT(tokenStr string) (string, string, error) {
 		return "", "", errors.New("invalid claims")
 	}
 
-	// Safely extract user_id
 	userIDInterface, exists := claims["user_id"]
 	if !exists {
 		return "", "", errors.New("user_id not found in token")
@@ -145,7 +144,6 @@ func VerifyJWT(tokenStr string) (string, string, error) {
 		return "", "", errors.New("invalid user_id type")
 	}
 
-	// Safely extract session_id
 	sessionIDInterface, exists := claims["session_id"]
 	if !exists {
 		return "", "", errors.New("session_id not found in token")
