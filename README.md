@@ -53,7 +53,7 @@ cd ToDo
 The easiest way — spins up the app and PostgreSQL together:
 
 ```bash
-docker-compose up --build
+docker-compose up -d
 ```
 
 ### 3. Run Locally (Without Docker)
@@ -86,20 +86,6 @@ Make sure your database connection details are configured correctly in the `data
 
 ---
 
-## 🛠️ Environment Variables
-
-Create a `.env` file in the root or configure these directly:
-
-```env
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=yourpassword
-DB_NAME=todo_db
-APP_PORT=8080
-```
-
----
 
 ## 📦 Dependencies
 
